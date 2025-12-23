@@ -59,8 +59,7 @@ jobs:
           cmake \
           ninja-build \
           wget \
-          curl \
-          virtualenv
+          curl
     
     - name: Install Buildozer and Cython
       run: |
@@ -68,11 +67,39 @@ jobs:
         pip install cython==0.29.33
         pip install buildozer==1.5.0
     
-    - name: Build APK
+    - name: Debug - Show environment
+      run: |
+        echo "=== Current directory ==="
+        pwd
+        ls -la
+        echo "=== Buildozer version ==="
+        buildozer --version
+        echo "=== Python version ==="
+        python --version
+    
+    - name: Build APK with logging
       timeout-minutes: 30
       run: |
-        # Пропускаем вопросы при сборке
-        yes | buildozer android debug || echo "Build completed"
+        # Запускаем сборку с подробным логом
+        buildozer android debug 2>&1 | tee build.log
+        
+        echo "=== Build completed, checking result ==="
+        ls -la bin/ 2>/dev/null || echo "No bin directory!"
+        
+        # Проверяем логи на ошибки
+        if grep -i "error\|failed\|exception" build.log; then
+          echo "ERRORS FOUND IN BUILD LOG!"
+          echo "=== Last 20 lines of build.log ==="
+          tail -20 build.log
+          exit 1
+        fi
+    
+    - name: Check for APK
+      run: |
+        echo "=== Searching for APK files ==="
+        find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
+        echo "=== bin directory contents ==="
+        ls -la bin/ 2>/dev/null || echo "bin directory does not exist"
     
     - name: Upload APK
       if: success()
@@ -80,4 +107,4 @@ jobs:
       with:
         name: myapp-apk
         path: bin/*.apk
-        if-no-files-found: warn
+        if-no-files-found: error
