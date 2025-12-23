@@ -5,14 +5,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Build with Docker
-      timeout-minutes: 30
+    
+    - name: Build with Docker (auto yes)
+      timeout-minutes: 25
       run: |
-        docker run --rm \
+        # Автоматически отвечаем 'yes' на все вопросы
+        echo -e 'y\ny\ny\ny' | docker run -i --rm \
           -v "$(pwd)":/src \
           -w /src \
           kivy/buildozer \
-          android debug
+          android debug 2>&1 | tail -50
+        
+        # Проверяем, создался ли APK
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK создан!"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK не найден"
+          exit 1
+        fi
+    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
