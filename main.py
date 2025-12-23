@@ -3,7 +3,7 @@ from kivy.uix.button import Button
 
 class TestApp(App):
     def build(self):
-        return Button(text='Working APK!')
+        return Button(text='Hello APK!')
 
 if __name__ == '__main__':
     TestApp().run()

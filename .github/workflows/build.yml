@@ -12,94 +12,81 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.10'
     
-    - name: Install ALL dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          git \
-          zip \
-          unzip \
-          openjdk-17-jdk \
-          python3-pip \
-          python3-dev \
-          build-essential \
-          libffi-dev \
-          libssl-dev \
-          zlib1g-dev \
-          libjpeg-dev \
-          libpng-dev \
-          libsdl2-dev \
-          libsdl2-image-dev \
-          libsdl2-mixer-dev \
-          libsdl2-ttf-dev \
-          libportmidi-dev \
-          libswscale-dev \
-          libavformat-dev \
-          libavcodec-dev \
-          libfreetype6-dev \
-          libgstreamer1.0-dev \
-          libgstreamer-plugins-base1.0-dev \
-          libmtdev-dev \
-          libgl1-mesa-dev \
-          libgles2-mesa-dev \
-          libsqlite3-dev \
-          libreadline-dev \
-          libncurses5-dev \
-          libbz2-dev \
-          liblzma-dev \
-          libgdbm-dev \
-          libnss3-dev \
-          cython3 \
-          pkg-config \
-          autoconf \
-          automake \
-          libtool \
-          cmake \
-          ninja-build \
-          wget \
-          curl
+          git zip unzip openjdk-17-jdk \
+          python3-pip python3-dev \
+          build-essential libffi-dev libssl-dev \
+          zlib1g-dev libncurses5-dev \
+          autoconf automake libtool pkg-config \
+          wget curl
     
-    - name: Install Buildozer and Cython
+    - name: Install specific Buildozer version
       run: |
         pip install --upgrade pip setuptools wheel
+        pip install "buildozer==1.4.0"  # Более старая, но стабильная версия
         pip install cython==0.29.33
-        pip install buildozer==1.5.0
     
-    - name: Debug - Show environment
+    - name: Pre-download python-for-android
       run: |
-        echo "=== Current directory ==="
-        pwd
-        ls -la
-        echo "=== Buildozer version ==="
-        buildozer --version
-        echo "=== Python version ==="
-        python --version
+        echo "=== Pre-downloading python-for-android ==="
+        mkdir -p ~/.buildozer/android/platform
+        
+        # Скачиваем python-for-android напрямую (обход бага Buildozer)
+        wget -q https://github.com/kivy/python-for-android/archive/refs/tags/2023.08.04.tar.gz -O p4a.tar.gz
+        tar -xzf p4a.tar.gz -C ~/.buildozer/android/platform/
+        mv ~/.buildozer/android/platform/python-for-android-2023.08.04 ~/.buildozer/android/platform/python-for-android
+        
+        # Скачиваем Android SDK отдельно
+        mkdir -p ~/.buildozer/android/platform/android-sdk
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O sdk.zip
+        unzip -q sdk.zip -d ~/.buildozer/android/platform/android-sdk/
+        mv ~/.buildozer/android/platform/android-sdk/cmdline-tools ~/.buildozer/android/platform/android-sdk/tools
+        
+        # Принимаем лицензии
+        yes | ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager --licenses >/dev/null 2>&1 || true
+        
+        echo "=== Pre-download completed ==="
     
-    - name: Build APK with logging
-      timeout-minutes: 30
+    - name: Build APK (skip downloads)
+      timeout-minutes: 45
       run: |
-        # Запускаем сборку с подробным логом
-        buildozer android debug 2>&1 | tee build.log
+        # Устанавливаем переменные чтобы Buildozer использовал предзагруженные файлы
+        export BUILDOZER_SKIP_DOWNLOAD=1
+        export ANDROID_SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+        export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-sdk/ndk/25.1.8937393"
         
-        echo "=== Build completed, checking result ==="
-        ls -la bin/ 2>/dev/null || echo "No bin directory!"
+        echo "=== Starting Buildozer ==="
         
-        # Проверяем логи на ошибки
-        if grep -i "error\|failed\|exception" build.log; then
-          echo "ERRORS FOUND IN BUILD LOG!"
-          echo "=== Last 20 lines of build.log ==="
-          tail -20 build.log
+        # Запускаем сборку в фоне с логированием
+        buildozer android debug 2>&1 | tee build.log &
+        BUILD_PID=$!
+        
+        # Ждём максимум 40 минут
+        sleep 2400
+        
+        # Проверяем, завершился ли процесс
+        if ps -p $BUILD_PID > /dev/null; then
+          echo "Build is still running after 40 minutes, continuing..."
+          wait $BUILD_PID
+        fi
+        
+        echo "=== Build process finished ==="
+        
+        # Проверяем результат
+        if [ -f "bin/*.apk" ]; then
+          echo "✅ APK создан!"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK не найден"
+          echo "=== Последние 30 строк лога ==="
+          tail -30 build.log
           exit 1
         fi
-    
-    - name: Check for APK
-      run: |
-        echo "=== Searching for APK files ==="
-        find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
-        echo "=== bin directory contents ==="
-        ls -la bin/ 2>/dev/null || echo "bin directory does not exist"
     
     - name: Upload APK
       if: success()
