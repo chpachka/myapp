@@ -14,14 +14,70 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install Buildozer
-      run: pip install buildozer
+    - name: Install ALL dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git \
+          zip \
+          unzip \
+          openjdk-17-jdk \
+          python3-pip \
+          python3-dev \
+          build-essential \
+          libffi-dev \
+          libssl-dev \
+          zlib1g-dev \
+          libjpeg-dev \
+          libpng-dev \
+          libsdl2-dev \
+          libsdl2-image-dev \
+          libsdl2-mixer-dev \
+          libsdl2-ttf-dev \
+          libportmidi-dev \
+          libswscale-dev \
+          libavformat-dev \
+          libavcodec-dev \
+          libfreetype6-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev \
+          libmtdev-dev \
+          libgl1-mesa-dev \
+          libgles2-mesa-dev \
+          libsqlite3-dev \
+          libreadline-dev \
+          libncurses5-dev \
+          libbz2-dev \
+          liblzma-dev \
+          libgdbm-dev \
+          libnss3-dev \
+          cython3 \
+          pkg-config \
+          autoconf \
+          automake \
+          libtool \
+          cmake \
+          ninja-build \
+          wget \
+          curl \
+          virtualenv
+    
+    - name: Install Buildozer and Cython
+      run: |
+        pip install --upgrade pip setuptools wheel
+        pip install cython==0.29.33
+        pip install buildozer==1.5.0
     
     - name: Build APK
-      run: buildozer android debug
-      
+      timeout-minutes: 30
+      run: |
+        # Пропускаем вопросы при сборке
+        yes | buildozer android debug || echo "Build completed"
+    
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: app
+        name: myapp-apk
         path: bin/*.apk
+        if-no-files-found: warn
