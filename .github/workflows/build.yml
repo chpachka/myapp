@@ -40,7 +40,27 @@ jobs:
             autoconf \
             automake \
             libtool \
-            pkg-config
+            pkg-config \
+            wget \
+            unzip \
+            curl
+
+      - name: Install Android SDK
+        run: |
+          mkdir -p ~/.android
+          echo "export ANDROID_HOME=\$HOME/android-sdk" >> ~/.bashrc
+          echo "export PATH=\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools" >> ~/.bashrc
+          source ~/.bashrc
+          
+          # Скачиваем Android SDK
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          mkdir -p ~/android-sdk/cmdline-tools
+          unzip -q cmdline-tools.zip -d ~/android-sdk/cmdline-tools
+          mv ~/android-sdk/cmdline-tools/cmdline-tools ~/android-sdk/cmdline-tools/latest
+          
+          # Принимаем лицензии и устанавливаем компоненты
+          yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          ~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-31" "build-tools;31.0.0" "ndk;25.1.8937393"
 
       - name: Install Buildozer and Cython
         run: |
@@ -48,8 +68,27 @@ jobs:
           pip3 install cython==0.29.33
           pip3 install buildozer
 
+      - name: Configure Buildozer
+        run: |
+          # Создаём базовую конфигурацию если нет spec файла
+          if [ ! -f buildozer.spec ]; then
+            buildozer init
+          fi
+          
+          # Устанавливаем пути для Android SDK
+          export ANDROID_HOME="$HOME/android-sdk"
+          export ANDROID_SDK_HOME="$HOME/android-sdk"
+          export ANDROID_NDK_HOME="$HOME/android-sdk/ndk/25.1.8937393"
+          
+          echo "ANDROID_HOME set to: \$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME set to: \$ANDROID_NDK_HOME"
+
       - name: Build APK with Buildozer
         run: |
+          export ANDROID_HOME="$HOME/android-sdk"
+          export ANDROID_SDK_HOME="$HOME/android-sdk"
+          export ANDROID_NDK_HOME="$HOME/android-sdk/ndk/25.1.8937393"
+          
           buildozer android debug
 
       - name: Upload APK
