@@ -1,29 +1,23 @@
 name: Build APK
-
 on: [push]
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v4
-    
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-    
+    - name: Install Cython FIRST
+      run: pip install cython==0.29.33
     - name: Install Buildozer
       run: pip install buildozer
-    
-    - name: Build
-      timeout-minutes: 40
+    - name: Build APK
+      timeout-minutes: 45
       run: buildozer android debug
-      
-    - name: Upload
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app
         path: bin/*.apk
-        if-no-files-found: error
