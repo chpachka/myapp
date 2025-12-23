@@ -3,7 +3,7 @@ from kivy.uix.button import Button
 
 class TestApp(App):
     def build(self):
-        return Button(text='Hello from GitHub Actions!')
+        return Button(text='APK Built!')
 
 if __name__ == '__main__':
     TestApp().run()
