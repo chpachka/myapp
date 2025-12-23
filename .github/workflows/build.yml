@@ -1,4 +1,4 @@
-name: Build APK with Docker
+name: Build APK
 on: [push]
 jobs:
   build:
@@ -6,24 +6,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Build with Docker (auto yes)
-      timeout-minutes: 25
-      run: |
-        # Автоматически отвечаем 'yes' на все вопросы
-        echo -e 'y\ny\ny\ny' | docker run -i --rm \
-          -v "$(pwd)":/src \
-          -w /src \
-          kivy/buildozer \
-          android debug 2>&1 | tail -50
-        
-        # Проверяем, создался ли APK
-        if ls bin/*.apk 1> /dev/null 2>&1; then
-          echo "✅ APK создан!"
-          ls -la bin/*.apk
-        else
-          echo "❌ APK не найден"
-          exit 1
-        fi
+    # Готовый Action, который УЖЕ содержит всё необходимое
+    - uses: ArtemSBulgakov/buildozer-action@v1.3.1
+      with:
+        workdir: '.'
+        buildozer_version: 'stable'
+        command: 'buildozer android debug'
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
