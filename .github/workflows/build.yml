@@ -50,7 +50,6 @@ jobs:
 
       - name: Build APK with Buildozer
         run: |
-          buildozer init -y
           buildozer android clean
           buildozer android debug
 
