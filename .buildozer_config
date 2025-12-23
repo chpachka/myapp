@@ -1,0 +1,4 @@
+[buildozer]
+skip_sdk_download = True
+sdk_dir = /home/runner/.buildozer/android/platform/android-sdk
+ndk_dir = /home/runner/.buildozer/android/platform/android-sdk/ndk/25.1.8937393

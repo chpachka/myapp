@@ -8,92 +8,82 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            git \
-            zip \
-            unzip \
-            openjdk-17-jdk \
-            python3-pip \
-            libffi-dev \
-            libssl-dev \
-            zlib1g-dev \
-            libncurses5-dev \
-            libgdbm-dev \
-            libnss3-dev \
-            libreadline-dev \
-            libsqlite3-dev \
-            liblzma-dev \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            wget \
-            unzip \
-            curl
-
-      - name: Install Android SDK
-        run: |
-          mkdir -p ~/.android
-          echo "export ANDROID_HOME=\$HOME/android-sdk" >> ~/.bashrc
-          echo "export PATH=\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools" >> ~/.bashrc
-          source ~/.bashrc
-          
-          # Скачиваем Android SDK
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          mkdir -p ~/android-sdk/cmdline-tools
-          unzip -q cmdline-tools.zip -d ~/android-sdk/cmdline-tools
-          mv ~/android-sdk/cmdline-tools/cmdline-tools ~/android-sdk/cmdline-tools/latest
-          
-          # Принимаем лицензии и устанавливаем компоненты
-          yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
-          ~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-31" "build-tools;31.0.0" "ndk;25.1.8937393"
-
-      - name: Install Buildozer and Cython
-        run: |
-          pip3 install --upgrade pip setuptools wheel
-          pip3 install cython==0.29.33
-          pip3 install buildozer
-
-      - name: Configure Buildozer
-        run: |
-          # Создаём базовую конфигурацию если нет spec файла
-          if [ ! -f buildozer.spec ]; then
-            buildozer init
-          fi
-          
-          # Устанавливаем пути для Android SDK
-          export ANDROID_HOME="$HOME/android-sdk"
-          export ANDROID_SDK_HOME="$HOME/android-sdk"
-          export ANDROID_NDK_HOME="$HOME/android-sdk/ndk/25.1.8937393"
-          
-          echo "ANDROID_HOME set to: \$ANDROID_HOME"
-          echo "ANDROID_NDK_HOME set to: \$ANDROID_NDK_HOME"
-
-      - name: Build APK with Buildozer
-        run: |
-          export ANDROID_HOME="$HOME/android-sdk"
-          export ANDROID_SDK_HOME="$HOME/android-sdk"
-          export ANDROID_NDK_HOME="$HOME/android-sdk/ndk/25.1.8937393"
-          
-          buildozer android debug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: myapp-apk
-          path: bin/*.apk
-          if-no-files-found: error
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git \
+          zip \
+          unzip \
+          openjdk-17-jdk \
+          python3-pip \
+          python3-venv \
+          libffi-dev \
+          libssl-dev \
+          zlib1g-dev \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          cmake \
+          ninja-build \
+          wget
+    
+    - name: Install Buildozer
+      run: |
+        pip3 install --upgrade pip setuptools wheel
+        pip3 install cython==0.29.33
+        pip3 install buildozer==1.5.0
+    
+    - name: Pre-download Android SDK
+      run: |
+        # Создаём директорию где Buildozer ожидает SDK
+        mkdir -p ~/.buildozer/android/platform/android-sdk
+        
+        # Скачиваем готовый SDK для Buildozer
+        wget -q https://github.com/termux/termux-packages/files/14242481/sdk-tools-linux-4333796.zip -O ~/sdk-tools.zip
+        unzip -q ~/sdk-tools.zip -d ~/.buildozer/android/platform/android-sdk/
+        
+        # Устанавливаем лицензии
+        yes | ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager --licenses || true
+        
+        # Устанавливаем компоненты в правильную папку
+        ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager \
+          "platform-tools" \
+          "platforms;android-31" \
+          "build-tools;31.0.0" \
+          "ndk;25.1.8937393"
+    
+    - name: Build APK
+      run: |
+        # Устанавливаем переменные окружения
+        export BUILD_PATH="$HOME/.buildozer"
+        export ANDROID_SDK_ROOT="$BUILD_PATH/android/platform/android-sdk"
+        export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/25.1.8937393"
+        
+        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        
+        # Пропускаем загрузку SDK в Buildozer (уже есть)
+        export BUILDOZER_SKIP_SDK_DOWNLOAD=1
+        
+        # Запускаем сборку
+        buildozer android debug 2>&1 | tail -50
+    
+    - name: Upload APK
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: myapp-apk
+        path: bin/*.apk
+        if-no-files-found: error
