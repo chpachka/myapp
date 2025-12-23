@@ -5,15 +5,61 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    # Готовый Action, который УЖЕ содержит всё необходимое
-    - uses: ArtemSBulgakov/buildozer-action@v1.3.1
+    - uses: actions/setup-python@v5
       with:
-        workdir: '.'
-        buildozer_version: 'stable'
-        command: 'buildozer android debug'
-    
+        python-version: '3.10'
+    - name: Install system packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git wget unzip openjdk-17-jdk \
+          python3-pip python3-dev \
+          build-essential libffi-dev libssl-dev \
+          zlib1g-dev libncurses5-dev \
+          autoconf automake libtool pkg-config
+    - name: Install Buildozer and Cython
+      run: |
+        pip install --upgrade pip setuptools wheel
+        pip install cython==0.29.33
+        pip install buildozer==1.5.0
+    - name: Set Android SDK environment
+      run: |
+        # Устанавливаем переменные для Android SDK
+        export ANDROID_SDK_ROOT="$HOME/android-sdk"
+        export ANDROID_HOME="$ANDROID_SDK_ROOT"
+        export PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools"
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "PATH=$PATH" >> $GITHUB_ENV
+    - name: Download Android SDK
+      run: |
+        mkdir -p $HOME/android-sdk
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+        unzip -q cmdline-tools.zip -d $HOME/android-sdk/
+        mv $HOME/android-sdk/cmdline-tools $HOME/android-sdk/cmdline-tools-temp
+        mkdir -p $HOME/android-sdk/cmdline-tools
+        mv $HOME/android-sdk/cmdline-tools-temp/* $HOME/android-sdk/cmdline-tools/latest/
+        yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+        $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+    - name: Build APK
+      timeout-minutes: 40
+      run: |
+        # Указываем Buildozer использовать наш SDK
+        export ANDROID_SDK_ROOT="$HOME/android-sdk"
+        export ANDROID_HOME="$ANDROID_SDK_ROOT"
+        buildozer android debug 2>&1 | tail -100
+    - name: Check APK
+      run: |
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK создан!"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK не найден"
+          find . -name "*.apk" -type f 2>/dev/null || echo "APK файлов нет"
+          exit 1
+        fi
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: myapp-apk
