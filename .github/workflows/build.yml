@@ -13,47 +13,57 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install ALL dependencies including openssl
+    - name: Install ALL dependencies CORRECTLY
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          git openjdk-17-jdk \
-          python3-pip python3-dev \
-          build-essential autoconf automake libtool \
-          zip unzip wget curl \
-          # КРИТИЧЕСКИ ВАЖНЫЕ БИБЛИОТЕКИ
-          libssl-dev libffi-dev \
-          zlib1g-dev libncurses5-dev \
-          libsqlite3-dev libreadline-dev \
-          libbz2-dev liblzma-dev \
-          libgdbm-dev libnss3-dev \
-          # Для pkg-config
+          git \
+          openjdk-17-jdk \
+          python3-pip \
+          python3-dev \
+          build-essential \
+          autoconf \
+          automake \
+          libtool \
+          zip \
+          unzip \
+          wget \
+          curl \
+          libssl-dev \
+          libffi-dev \
+          zlib1g-dev \
+          libncurses5-dev \
+          libsqlite3-dev \
+          libreadline-dev \
+          libbz2-dev \
+          liblzma-dev \
+          libgdbm-dev \
+          libnss3-dev \
           pkg-config \
-          # Для графики Kivy
-          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-          libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
-          libfreetype6-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          libsdl2-dev \
+          libsdl2-image-dev \
+          libsdl2-mixer-dev \
+          libsdl2-ttf-dev \
+          libportmidi-dev \
+          libswscale-dev \
+          libavformat-dev \
+          libavcodec-dev \
+          libfreetype6-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev
     
-    - name: Install Android SDK CORRECTLY
+    - name: Install Android SDK
       run: |
-        # Создаём правильную структуру папок
         mkdir -p $HOME/android-sdk/cmdline-tools
-        
-        # Скачиваем tools
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
         unzip -q commandlinetools-linux-11076708_latest.zip -d $HOME/android-sdk/cmdline-tools/
-        
-        # Правильное расположение - переименовываем
         mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
         
-        # Устанавливаем переменные
         export ANDROID_SDK_ROOT=$HOME/android-sdk
         export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
         
-        # Принимаем лицензии
         yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT
         
-        # Устанавливаем компоненты
         $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
           --sdk_root=$ANDROID_SDK_ROOT \
           "platform-tools" \
@@ -64,42 +74,21 @@ jobs:
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
         echo "PATH=$PATH" >> $GITHUB_ENV
     
-    - name: Install python-for-android with specific version
+    - name: Install python-for-android and Kivy
       run: |
         pip install --upgrade pip setuptools wheel
         pip install cython==0.29.33
-        
-        # Устанавливаем python-for-android с GitHub (более новая версия)
-        pip install git+https://github.com/kivy/python-for-android.git@master
-        
-        # Устанавливаем Kivy
+        pip install python-for-android
         pip install kivy==2.3.0
     
-    - name: Setup pkg-config for openssl
-      run: |
-        # Настраиваем pkg-config чтобы находил openssl
-        echo "=== Setting up pkg-config ==="
-        export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
-        
-        # Проверяем что openssl доступен
-        pkg-config --list-all | grep -i ssl || echo "openssl not in pkg-config"
-        pkg-config --libs openssl 2>/dev/null || echo "Cannot find openssl with pkg-config"
-    
-    - name: Build APK with SSL fix
+    - name: Build APK
       timeout-minutes: 45
       run: |
-        # Устанавливаем переменные
         export ANDROID_SDK_ROOT=$HOME/android-sdk
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
-        export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
         
-        echo "=== STARTING BUILD WITH SSL FIX ==="
-        echo "SDK: $ANDROID_SDK_ROOT"
-        echo "NDK: $ANDROID_NDK_HOME"
-        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+        echo "=== STARTING BUILD ==="
         
-        # Компилируем с явным указанием игнорировать openssl проверку
         p4a apk \
           --private=$(pwd) \
           --package=com.example.myapp \
@@ -112,18 +101,15 @@ jobs:
           --arch=arm64-v8a \
           --sdk-dir=$ANDROID_SDK_ROOT \
           --ndk-dir=$ANDROID_NDK_HOME \
-          --ignore-setup-py 2>&1 | tee full_build.log
-        
-        # Анализируем результат
-        echo "=== BUILD FINISHED ==="
+          --ignore-setup-py 2>&1 | tee build.log
         
         if ls *.apk 1> /dev/null 2>&1; then
-          echo "✅ APK CREATED SUCCESSFULLY!"
+          echo "✅ APK создан!"
           ls -la *.apk
         else
-          echo "❌ NO APK FILE FOUND"
-          echo "=== LAST CRITICAL ERRORS ==="
-          grep -i -B5 -A5 "error\|failed\|exception\|stop" full_build.log | tail -50
+          echo "❌ APK не найден"
+          echo "=== Последние ошибки ==="
+          tail -100 build.log | grep -i -B5 -A5 "error\|fail\|stop"
           exit 1
         fi
     
