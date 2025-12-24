@@ -1,4 +1,4 @@
-name: Build APK - Final Solution
+name: Minimal APK Build
 on: [push]
 
 jobs:
@@ -13,86 +13,64 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install dependencies
+    - name: Install basic tools
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          git openjdk-17-jdk \
-          python3-pip python3-dev \
-          build-essential autoconf automake libtool \
-          zip unzip wget curl
+          git wget unzip openjdk-17-jdk \
+          python3-pip
     
-    - name: Install Android SDK CORRECTLY
+    - name: Use pre-built Android environment
       run: |
-        # Создаём правильную структуру папок
-        mkdir -p $HOME/android-sdk/cmdline-tools
-        
-        # Скачиваем tools
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        unzip -q commandlinetools-linux-11076708_latest.zip -d $HOME/android-sdk/cmdline-tools/
-        
-        # Правильное расположение - переименовываем
-        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+        # Используем готовый скрипт для сборки
+        wget -q https://raw.githubusercontent.com/kivy/kivy/master/ci/androidsdk.sh
+        chmod +x androidsdk.sh
+        ./androidsdk.sh install
         
         # Устанавливаем переменные
-        export ANDROID_SDK_ROOT=$HOME/android-sdk
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
-        
-        # Принимаем лицензии
-        yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT
-        
-        # Устанавливаем компоненты
-        $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
-          --sdk_root=$ANDROID_SDK_ROOT \
-          "platform-tools" \
-          "platforms;android-34" \
-          "build-tools;34.0.0" \
-          "ndk;25.1.8937393"
-        
-        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-        echo "PATH=$PATH" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+        echo "PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_ENV
     
-    - name: Install python-for-android
+    - name: Install Buildozer
       run: |
-        pip install --upgrade pip setuptools wheel
-        pip install cython==0.29.33
-        pip install python-for-android
-        pip install kivy
+        pip install buildozer
     
-    - name: Build APK with correct paths
-      timeout-minutes: 40
+    - name: Create minimal buildozer.spec
       run: |
-        # Устанавливаем переменные
-        export ANDROID_SDK_ROOT=$HOME/android-sdk
-        export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
+        cat > buildozer.spec << 'SPEC'
+[app]
+title = MyApp
+package.name = myapp
+package.domain = com.example
+source.dir = .
+version = 1.0
+requirements = python3
+orientation = portrait
+
+[buildozer]
+log_level = 2
+SPEC
+    
+    - name: Build APK (simplest)
+      timeout-minutes: 45
+      run: |
+        echo "=== Starting buildozer ==="
+        buildozer android debug 2>&1 | tail -200
         
-        # Проверяем что установлено
-        echo "=== SDK installed at: $ANDROID_SDK_ROOT ==="
-        ls -la $ANDROID_SDK_ROOT/
-        
-        echo "=== Starting APK build ==="
-        
-        # Собираем APK
-        p4a apk \
-          --private=$(pwd) \
-          --package=com.example.myapp \
-          --name="MyApp" \
-          --version=1.0 \
-          --bootstrap=sdl2 \
-          --requirements=python3,kivy \
-          --android-api=34 \
-          --ndk-api=21 \
-          --arch=arm64-v8a \
-          --sdk-dir=$ANDROID_SDK_ROOT \
-          --ndk-dir=$ANDROID_NDK_HOME 2>&1 | tail -100
-        
-        # Проверяем результат
-        echo "=== Build finished ==="
-        find . -name "*.apk" -type f
+        echo "=== Checking for APK ==="
+        if find . -name "*.apk" -type f | grep -q .; then
+          echo "✅ APK found!"
+          find . -name "*.apk" -type f | head -5
+        else
+          echo "❌ No APK found"
+          echo "Last 50 lines of log:"
+          tail -50 ~/.local/share/buildozer/android/platform/*.log 2>/dev/null || echo "No logs"
+          exit 1
+        fi
     
     - name: Upload APK
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: myapp-apk
-        path: "*.apk"
+        name: apk-file
+        path: "**/*.apk"
