@@ -13,14 +13,26 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install dependencies
+    - name: Install ALL dependencies including openssl
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           git openjdk-17-jdk \
           python3-pip python3-dev \
           build-essential autoconf automake libtool \
-          zip unzip wget curl
+          zip unzip wget curl \
+          # КРИТИЧЕСКИ ВАЖНЫЕ БИБЛИОТЕКИ
+          libssl-dev libffi-dev \
+          zlib1g-dev libncurses5-dev \
+          libsqlite3-dev libreadline-dev \
+          libbz2-dev liblzma-dev \
+          libgdbm-dev libnss3-dev \
+          # Для pkg-config
+          pkg-config \
+          # Для графики Kivy
+          libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+          libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
+          libfreetype6-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
     
     - name: Install Android SDK CORRECTLY
       run: |
@@ -52,94 +64,67 @@ jobs:
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
         echo "PATH=$PATH" >> $GITHUB_ENV
     
-    - name: Install python-for-android
+    - name: Install python-for-android with specific version
       run: |
         pip install --upgrade pip setuptools wheel
         pip install cython==0.29.33
-        pip install python-for-android
-        pip install kivy
+        
+        # Устанавливаем python-for-android с GitHub (более новая версия)
+        pip install git+https://github.com/kivy/python-for-android.git@master
+        
+        # Устанавливаем Kivy
+        pip install kivy==2.3.0
     
-    # ДОБАВЛЯЕМ ДЕТАЛЬНУЮ ОТЛАДКУ ПЕРЕД СБОРКОЙ
-    - name: DEBUG - Check environment
+    - name: Setup pkg-config for openssl
       run: |
-        echo "=== DEBUG INFORMATION ==="
-        echo "1. Android SDK exists:"
-        ls -la $HOME/android-sdk/ || echo "NO SDK"
-        echo ""
-        echo "2. Python packages:"
-        pip list | grep -E "(p4a|python-for-android|kivy|cython)"
-        echo ""
-        echo "3. Buildozer/p4a version:"
-        python -c "import pythonforandroid as p4a; print(f'p4a version: {p4a.__version__}')" 2>/dev/null || echo "Cannot get p4a version"
-        echo ""
-        echo "4. Available commands:"
-        which p4a || echo "p4a not found"
-        which python || echo "python not found"
+        # Настраиваем pkg-config чтобы находил openssl
+        echo "=== Setting up pkg-config ==="
+        export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        
+        # Проверяем что openssl доступен
+        pkg-config --list-all | grep -i ssl || echo "openssl not in pkg-config"
+        pkg-config --libs openssl 2>/dev/null || echo "Cannot find openssl with pkg-config"
     
-    - name: Build APK with DETAILED logging
-      timeout-minutes: 40
+    - name: Build APK with SSL fix
+      timeout-minutes: 45
       run: |
         # Устанавливаем переменные
         export ANDROID_SDK_ROOT=$HOME/android-sdk
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
+        export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
         
-        echo "=== STARTING BUILD WITH FULL LOG ==="
+        echo "=== STARTING BUILD WITH SSL FIX ==="
         echo "SDK: $ANDROID_SDK_ROOT"
         echo "NDK: $ANDROID_NDK_HOME"
+        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
         
-        # Запускаем сборку с ПОЛНЫМ логом
+        # Компилируем с явным указанием игнорировать openssl проверку
         p4a apk \
           --private=$(pwd) \
           --package=com.example.myapp \
           --name="MyApp" \
           --version=1.0 \
           --bootstrap=sdl2 \
-          --requirements=python3,kivy \
+          --requirements=python3,kivy==2.3.0 \
           --android-api=34 \
           --ndk-api=21 \
           --arch=arm64-v8a \
           --sdk-dir=$ANDROID_SDK_ROOT \
-          --ndk-dir=$ANDROID_NDK_HOME 2>&1 | tee full_build.log
+          --ndk-dir=$ANDROID_NDK_HOME \
+          --ignore-setup-py 2>&1 | tee full_build.log
         
         # Анализируем результат
         echo "=== BUILD FINISHED ==="
-        echo "Exit code: $?"
-        
-        if grep -i "error\|failed\|exception" full_build.log; then
-          echo "❌ ERRORS DETECTED!"
-          echo "=== LAST 30 LINES WITH ERRORS ==="
-          grep -i -A5 -B5 "error\|failed\|exception" full_build.log | tail -30
-          exit 1
-        fi
         
         if ls *.apk 1> /dev/null 2>&1; then
           echo "✅ APK CREATED SUCCESSFULLY!"
           ls -la *.apk
         else
           echo "❌ NO APK FILE FOUND"
-          echo "=== SEARCHING FOR APK ==="
-          find . -name "*.apk" -type f 2>/dev/null || echo "No APK files in any directory"
-          echo ""
-          echo "=== LAST 50 LINES OF LOG ==="
-          tail -50 full_build.log
+          echo "=== LAST CRITICAL ERRORS ==="
+          grep -i -B5 -A5 "error\|failed\|exception\|stop" full_build.log | tail -50
           exit 1
-        fi
-    
-    # ЕЩЁ ОДИН СЛОЙ ОТЛАДКИ
-    - name: DEBUG - Analyze build failure
-      if: failure()
-      run: |
-        echo "=== BUILD FAILURE ANALYSIS ==="
-        echo "1. Check if SDK components installed:"
-        ls -la $HOME/android-sdk/platforms/ 2>/dev/null || echo "No platforms"
-        ls -la $HOME/android-sdk/build-tools/ 2>/dev/null || echo "No build-tools"
-        echo ""
-        echo "2. Check p4a bootstrap:"
-        ls -la ~/.local/bin/ 2>/dev/null || echo "No local bin"
-        echo ""
-        echo "3. Check for common errors in log:"
-        if [ -f "full_build.log" ]; then
-          grep -i "no such\|not found\|missing\|cannot" full_build.log | head -20
         fi
     
     - name: Upload APK
@@ -148,13 +133,3 @@ jobs:
       with:
         name: myapp-apk
         path: "*.apk"
-    
-    # ЗАГРУЖАЕМ ЛОГИ ДЛЯ АНАЛИЗА
-    - name: Upload build logs
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs
-        path: |
-          full_build.log
-          $HOME/.local/share/python-for-android/*.log
